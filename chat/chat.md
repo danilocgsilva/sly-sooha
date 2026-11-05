@@ -308,3 +308,37 @@ The order matches the device list printed in the startup log. Check there which 
 The `llama-server` startup log lists each device and how many layers were assigned to it. If one machine is swapping, shift the split away from it. Running `free -h` on each machine during a request shows whether the swapping has stopped.
 
 If you tell me the RAM on each of the three machines and the model size, I can suggest a concrete `--tensor-split` and context size.
+
+## Question 7
+
+Based on the Docker recipe you gave me, create as well the `docker-compose.yml` file.
+
+## Answer 7
+
+I made a single `docker-compose.yml` with two profiles, plus an `.env.example`. Put the Dockerfile from the previous step next to them on every machine. Because the same compose file and Dockerfile are used everywhere, all machines build the same image, which keeps the llama.cpp versions matched.
+
+**Usage**
+
+1. Copy `.env.example` to `.env` and edit it.
+2. On each worker (B and C):
+   ```bash
+   docker compose --profile worker up -d --build
+   ```
+3. On the coordinator (A), after the workers are running:
+   ```bash
+   docker compose --profile server up -d --build
+   ```
+4. Watch the startup log to confirm the layer split across devices:
+   ```bash
+   docker compose --profile server logs -f
+   ```
+
+**Things to know**
+
+- **Variables:** `RPC_WORKERS` takes a comma-separated list of worker addresses. For two machines, give one address. `WORKER_THREADS` should match each worker's physical core count. You can set it per machine, since each has its own `.env`.
+- **Networking:** The file uses `network_mode: host`, so no `ports:` mapping is needed. The firewall rules from before still apply.
+- **Podman on Fedora:** `podman compose` (or `podman-compose`) can read this file, but behavior varies by version, so test it. The `:Z` on the models volume handles SELinux and is harmless on Debian.
+- **Manual split:** To control it with `--tensor-split`, add `- --tensor-split` and `- "40,30,30"` to the `llama-server` command list.
+- **GPUs:** The compose file is CPU-only. For NVIDIA, build the image with `-DGGML_CUDA=ON` from a CUDA base image and add a `deploy.resources.reservations.devices` block to the service. I can write that variant if you tell me which machines have GPUs.
+
+The files are `docker-compose.yml` and `.env.example`.

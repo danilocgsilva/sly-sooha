@@ -1,0 +1,59 @@
+# llama.cpp distributed inference over RPC.
+# Same file and same Dockerfile on every machine, so versions always match.
+#
+#   Workers (B and C):   docker compose --profile worker up -d --build
+#   Coordinator (A):     docker compose --profile server up -d --build
+#
+# Put the Dockerfile from the previous step next to this file.
+# Configuration comes from the .env file (see .env.example).
+
+services:
+  rpc-worker:
+    profiles: ["worker"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: myllama:local
+    container_name: rpc-worker
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - /app/rpc-server
+      - -H
+      - 0.0.0.0
+      - -p
+      - "50052"
+      - -c                      # cache received weights on disk
+      - -t
+      - "${WORKER_THREADS:-4}"  # CPU threads; set to this machine's physical cores
+    volumes:
+      - rpc-cache:/root/.cache
+
+  llama-server:
+    profiles: ["server"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: myllama:local
+    container_name: llama-server
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - /app/llama-server
+      - -m
+      - /models/${MODEL_FILE}
+      - --rpc
+      - ${RPC_WORKERS}          # e.g. 192.168.1.11:50052,192.168.1.12:50052
+      - -ngl
+      - "99"
+      - -c
+      - "${CTX_SIZE:-4096}"
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+    volumes:
+      - ${MODELS_DIR:-./models}:/models:ro,Z
+
+volumes:
+  rpc-cache:
